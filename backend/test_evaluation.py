@@ -1,31 +1,20 @@
 """
-HIPAA RAG Evaluation Suite (LLM-as-a-Judge)
-===========================================
+HIPAA RAG Evaluation Suite (Async)
+===================================
 
-Description:
-  This script performs an automated end-to-end evaluation of the HIPAA RAG 
-  API. It sends a predefined set of regulatory questions to the local API endpoint, 
-  retrieves the generated answers, and uses a secondary LLM (GPT-4o-mini) 
-  to act as an impartial judge.
-
-Metrics Evaluated:
-  - Accuracy, Completeness, Source Attribution, Relevance, and Clarity.
-
-Output:
-  - Console summary of scores.
-  - JSON report saved to '/app/evaluation_results_[timestamp].json'.
-  - Final verdict (e.g., "Production Ready", "Needs Work").
+Fast async evaluation using httpx instead of requests.
 """
 
 import os
 import json
-import requests
-from openai import OpenAI
+import httpx
+import asyncio
+from openai import AsyncOpenAI
 from datetime import datetime
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# 9 evaluation questions from assignment
+# 9 evaluation questions
 TEST_QUESTIONS = [
     {
         "id": 1,
@@ -74,13 +63,14 @@ TEST_QUESTIONS = [
     }
 ]
 
-def ask_system(question: str) -> dict:
-    """Send question to HIPAA RAG system."""
+
+async def ask_system(http_client: httpx.AsyncClient, question: str) -> dict:
+    """Send question to HIPAA RAG system (async)."""
     try:
-        response = requests.post(
+        response = await http_client.post(
             "http://localhost:8000/ask",
             json={"text": question},
-            timeout=30
+            timeout=30.0
         )
         if response.status_code == 200:
             return response.json()
@@ -89,8 +79,9 @@ def ask_system(question: str) -> dict:
     except Exception as e:
         return {"answer": f"Error: {str(e)}", "sources": []}
 
-def evaluate_answer(question: str, answer: str, sources: list, expected_topics: list) -> dict:
-    """Evaluate answer quality using LLM-as-a-Judge approach."""
+
+async def evaluate_answer(question: str, answer: str, sources: list, expected_topics: list) -> dict:
+    """Evaluate answer using async OpenAI."""
     
     evaluation_prompt = f"""You are an expert evaluator for a HIPAA RAG system.
 
@@ -124,7 +115,7 @@ Respond ONLY with valid JSON in this format:
 CRITICAL: Output ONLY the JSON object, nothing else."""
 
     try:
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": evaluation_prompt}],
             temperature=0.3
@@ -148,11 +139,11 @@ CRITICAL: Output ONLY the JSON object, nothing else."""
             "feedback": f"Evaluation failed: {str(e)}"
         }
 
-def run_evaluation():
-    """Run full system evaluation with all test questions."""
+async def run_evaluation():
+    """Run evaluation with batched parallel processing (3 at a time)."""
     
     print("=" * 80)
-    print("🧪 HIPAA RAG SYSTEM EVALUATION")
+    print("🧪 HIPAA RAG SYSTEM EVALUATION (BATCHED)")
     print("=" * 80)
     print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Total questions: {len(TEST_QUESTIONS)}\n")
@@ -167,43 +158,57 @@ def run_evaluation():
         "total": 0
     }
     
-    for test in TEST_QUESTIONS:
-        print(f"\n{'='*80}")
-        print(f"Question {test['id']}: {test['question']}")
-        print(f"{'='*80}")
-        
-        # Query the system
-        response = ask_system(test['question'])
+    async def process_question(http_client: httpx.AsyncClient, test: dict) -> dict:
+        """Process single question."""
+        # Query system
+        response = await ask_system(http_client, test['question'])
         answer = response.get('answer', 'No answer')
         sources = response.get('sources', [])
         
-        print(f"\n📝 Answer Preview: {answer[:200]}...")
-        print(f"📚 Sources: {', '.join(sources) if sources else 'None'}")
-        
-        # Evaluate with LLM
-        print("\n🤖 Evaluating with GPT-4o-mini...")
-        evaluation = evaluate_answer(
+        # Evaluate
+        evaluation = await evaluate_answer(
             test['question'],
             answer,
             sources,
             test['expected_topics']
         )
         
-        # Store results
-        result = {
+        return {
             "question_id": test['id'],
             "question": test['question'],
             "answer": answer,
             "sources": sources,
             "evaluation": evaluation
         }
-        results.append(result)
+    
+    # Process in batches of 3
+    BATCH_SIZE = 3
+    async with httpx.AsyncClient(timeout=60.0) as http_client:  # ✅ Увеличен timeout!
+        for batch_start in range(0, len(TEST_QUESTIONS), BATCH_SIZE):
+            batch_end = min(batch_start + BATCH_SIZE, len(TEST_QUESTIONS))
+            batch = TEST_QUESTIONS[batch_start:batch_end]
+            
+            print(f"🔄 Processing questions {batch_start+1}-{batch_end}...\n")
+            
+            tasks = [process_question(http_client, test) for test in batch]
+            batch_results = await asyncio.gather(*tasks)
+            results.extend(batch_results)
+    
+    # Display results
+    for result in sorted(results, key=lambda x: x['question_id']):
+        test_id = result['question_id']
+        question = result['question']
+        answer = result['answer']
+        sources = result['sources']
+        evaluation = result['evaluation']
         
-        # Update totals
-        for key in total_scores.keys():
-            total_scores[key] += evaluation.get(key, 0)
+        print(f"\n{'='*80}")
+        print(f"Question {test_id}: {question}")
+        print(f"{'='*80}")
         
-        # Display scores
+        print(f"\n📝 Answer Preview: {answer[:200]}...")
+        print(f"📚 Sources: {', '.join(sources) if sources else 'None'}")
+        
         print("\n📊 Scores:")
         print(f"   Accuracy:           {evaluation.get('accuracy', 0)}/10")
         print(f"   Completeness:       {evaluation.get('completeness', 0)}/10")
@@ -212,6 +217,10 @@ def run_evaluation():
         print(f"   Clarity:            {evaluation.get('clarity', 0)}/10")
         print(f"   TOTAL:              {evaluation.get('total', 0)}/50")
         print(f"\n💬 Feedback: {evaluation.get('feedback', 'N/A')}")
+        
+        # Update totals
+        for key in total_scores.keys():
+            total_scores[key] += evaluation.get(key, 0)
     
     # Final report
     print(f"\n\n{'='*80}")
@@ -235,7 +244,7 @@ def run_evaluation():
             "timestamp": datetime.now().isoformat(),
             "total_questions": len(TEST_QUESTIONS),
             "average_scores": avg_scores,
-            "detailed_results": results
+            "detailed_results": sorted(results, key=lambda x: x['question_id'])
         }, f, indent=2)
     
     print(f"\n💾 Detailed results saved to: {output_file}")
@@ -254,5 +263,6 @@ def run_evaluation():
         print("❌ NEEDS WORK! System requires significant improvements.")
     print(f"{'='*80}\n")
 
+
 if __name__ == "__main__":
-    run_evaluation()
+    asyncio.run(run_evaluation())

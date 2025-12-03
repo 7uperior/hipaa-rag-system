@@ -13,7 +13,8 @@ RUN pip install --no-cache-dir \
     numpy \
     langchain \
     langchain-openai \
-    requests
+    requests \
+    httpx
 
 COPY . .
 RUN mkdir -p /app/data

@@ -69,7 +69,7 @@ async def main():
         """)
         print("✅ Table created!")
 
-        print("📖 Loading hipaa_data.json...")
+        print("📖 Loading hipaa_data_new.json...")
         with open('/app/hipaa_data.json', 'r') as f:
             sections = json.load(f)
 
