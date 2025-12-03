@@ -10,17 +10,31 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  neo4j:
+    image: neo4j:5.26
+    environment:
+      NEO4J_AUTH: neo4j/password123
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_memory_pagecache_size: 512M
+      NEO4J_dbms_memory_heap_initial__size: 512M
+      NEO4J_dbms_memory_heap_max__size: 1G
+    ports:
+      - "7474:7474"  # Neo4j Browser
+      - "7687:7687"  # Bolt protocol
+    volumes:
+      - neo4j_data:/data
+
   backend:
     build: ./backend
     ports:
       - "8000:8000"
     depends_on:
       - postgres
+      - neo4j
     env_file:
       - .env
     volumes:
-      - ./data:/app/data
-      - ./data/hipaa_data.json:/app/hipaa_data.json
+      - ./data:/app/data                    # ✅ Только папка data
 
   frontend:
     build: ./frontend
@@ -41,3 +55,4 @@ services:
 
 volumes:
   postgres_data:
+  neo4j_data:
