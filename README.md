@@ -126,19 +126,6 @@ print("Sources:", data["sources"])
 
 ## 🧪 Testing
 
-### Run Automated Evaluation
-
-```bash
-docker compose exec backend python test_evaluation.py
-```
-
-**Expected Results:**
-- Overall Score: ~86%
-- Accuracy: ~8.7/10
-- Completeness: ~8.0/10
-- Source Attribution: ~8.5/10
-- Relevance: ~9.2/10
-- Clarity: ~8.5/10
 
 
 ### Manual Testing
@@ -153,35 +140,9 @@ Test with these sample questions:
 7.	Can I disclose personal health information to family members?
 8.	If a covered entity outsources data processing, which sections apply?
 9.	Cite the specific regulation texts regarding permitted disclosures to law enforcement.
+10. Where security rule is located?
+11. Give me full contents of 160.514 part 
 
-
-## 🏗️ Project Structure
-
-```
-hipaa/
-├── docker-compose.yml       # Service orchestration
-├── .env                      # Environment variables (API keys)
-├── .gitignore               # Git ignore rules
-├── README.md                # This file
-│
-├── backend/                 # FastAPI application
-│   ├── Dockerfile           # Backend container config
-│   ├── main.py              # API endpoints & search logic
-│   ├── load_pdf.py          # PDF parsing script (to use json in memory)
-│   ├── load_to_db.py        # Database loading script (to use postgrresql)
-│   └── test_evaluation.py   # Automated testing
-│
-├── frontend/                # Gradio UI
-│   ├── Dockerfile           # Frontend container config
-│   └── app.py               # UI application
-│
-├── nginx/                   # Reverse proxy
-│   └── nginx.conf           # NGINX configuration
-│
-└── data/                    # Data files
-    ├── hipaa_combined.pdf   # Source HIPAA document
-    └── hipaa_data.json      # Parsed sections
-```
 
 ## 🔧 Technology Stack
 
@@ -197,39 +158,6 @@ hipaa/
 | **LLM Evaluation** | GPT-4o-mini | LLM-as-a-Judge grading |
 | **Public Access** | Cloudflare Tunnel | HTTPS tunneling |
 
-## 📊 Performance Metrics
-
-### Search Performance
-- **Hybrid Search**: Vector (60%) + Keyword (40%)
-- **Retrieval**: Top-10 candidates → Reranked to Top-5
-- **Response Time**: ~2-3 seconds per query
-- **Context Window**: 1200-2000 characters per query
-
-### Evaluation Scores (LLM-as-a-Judge)
-- **Accuracy**: 8.7/10 (87%)
-- **Completeness**: 8.3/10 (83%)
-- **Source Attribution**: 8.2/10 (82%)
-- **Relevance**: 9.4/10 (94%)
-- **Clarity**: 8.4/10 (84%)
-- **Overall**: 43.1/50 (86.2%)
-
-### Database Stats
-- **Total Sections**: 488 HIPAA sections
-- **Vector Dimensions**: 1536 (OpenAI embeddings)
-- **Index Type**: IVFFlat for cosine similarity
-- **Storage**: ~500KB JSON + embeddings
-
-## 🔐 Security Notes
-
-- API keys stored in `.env` (git-ignored)
-- No user authentication (per requirements)
-- HTTPS via Cloudflare Tunnel
-- No data persistence beyond session
-- Production deployment would require:
-  - User authentication
-  - Rate limiting
-  - API key rotation
-  - Audit logging
 
 ## 🛠️ Troubleshooting
 
