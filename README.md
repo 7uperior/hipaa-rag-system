@@ -66,7 +66,7 @@ docker compose restart backend
 5. **Verify system:**
 ```bash
 curl http://localhost/api/
-# Should return: {"status":"running","database":"postgresql_async","sections_loaded":488,"search_method":"hybrid_vector_keyword_reranking"}
+# Should return: {"status":"running","database":"postgresql_async","sections_loaded":172,"search_method":"hybrid_vector_keyword_reranking","query_types":["full_text","citation","explanation","reference_list"]}
 ```
 
 ### Access Points
