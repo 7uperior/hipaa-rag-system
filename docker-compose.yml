@@ -1,0 +1,75 @@
+services:
+  # PostgreSQL with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg15
+    environment:
+      POSTGRES_DB: hipaa
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d hipaa"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=postgres
+      - DB_NAME=hipaa
+      - DB_USER=user
+      - DB_PASSWORD=pass
+    volumes:
+      - ./data:/app/data:ro
+
+  # Gradio Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "7860:7860"
+    depends_on:
+      - backend
+    environment:
+      - BACKEND_URL=http://backend:8000
+
+  # NGINX Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - frontend
+
+  # Cloudflare Tunnel for public access (optional)
+  # Start with: docker-compose up -d cloudflared
+  # Or: docker-compose --profile tunnel up -d
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://nginx:80
+    profiles:
+      - tunnel
+    depends_on:
+      - nginx
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
