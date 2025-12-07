@@ -1,301 +1,343 @@
-# HIPAA RAG System
+# 🏥 HIPAA RAG System
 
-Production-ready Retrieval-Augmented Generation system for querying HIPAA regulations.
+A production-ready Retrieval-Augmented Generation (RAG) system for querying HIPAA regulations (Parts 160, 162, and 164).
 
-[![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
-[![Docker](https://img.shields.io/badge/Docker-Compose-blue.svg)](https://docs.docker.com/compose/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-
-## 🎯 Features
+## Features
 
 - **Hybrid Search**: Combines semantic vector search (60%) with keyword matching (40%)
-- **AI Reranking**: LLM-based relevance scoring for optimal results
-- **Async Architecture**: Non-blocking I/O with connection pooling
-- **Citation Support**: Direct quotes with section references (§ XXX.XXX)
-- **Vector Embeddings**: PostgreSQL + pgvector for semantic search
-- **Professional UI**: Clean Gradio interface for easy interaction
-- **Auto-Evaluation**: LLM-as-a-Judge testing framework (86.2% accuracy)
+- **LLM Reranking**: GPT-4o-mini-based relevance scoring for improved accuracy
+- **Query Classification**: Routes queries to specialized handlers (full_text, citation, explanation, reference_list)
+- **Intelligent Chunking**: Hierarchical chunking that respects legal document structure
+- **Citation Support**: Proper § citation formatting with section references
+- **Async Architecture**: High-performance async database operations with connection pooling
+- **Auto Data Loading**: Automatically loads pre-processed data on first startup
 
-## 📊 System Architecture
+## Architecture
 
 ```
-User → Cloudflare Tunnel (HTTPS)
-  ↓
-NGINX Reverse Proxy :80
-  ├── / → Gradio Frontend :7860
-  └── /api/ → FastAPI Backend :8000
-        ↓
-  ├── PostgreSQL + pgvector :5432 (488 sections)
-  └── OpenAI API (GPT-3.5-turbo + embeddings)
+hipaa/
+├── config/                     # Configuration management
+│   ├── settings.py            # Pydantic settings (centralized config)
+│   └── logging.py             # Logging configuration
+│
+├── ETL/                        # Extract-Transform-Load pipeline
+│   ├── models/
+│   │   └── chunks.py          # Pydantic models for chunk types
+│   ├── extractors/
+│   │   └── pdf.py             # 3-column PDF linearization
+│   ├── transformers/
+│   │   ├── parser.py          # Text → structured chunks
+│   │   └── chunker.py         # Intelligent section splitting
+│   └── loaders/
+│       └── postgres.py        # PostgreSQL + pgvector loading
+│
+├── backend/                    # FastAPI API server
+│   ├── main.py                # Routes and application setup
+│   ├── startup.py             # Auto-load data + start server
+│   ├── dependencies.py        # FastAPI dependency injection
+│   ├── db/
+│   │   ├── connection.py      # Async connection pool
+│   │   └── queries.py         # SQL query definitions
+│   ├── services/
+│   │   ├── search.py          # Vector/keyword/hybrid search
+│   │   ├── reranker.py        # LLM-based reranking
+│   │   ├── classifier.py      # Query type classification
+│   │   └── generator.py       # Answer generation
+│   └── models/
+│       └── schemas.py         # API request/response models
+│
+├── frontend/                   # Gradio web interface
+│   └── app.py                 # Chat interface
+│
+├── nginx/                      # Reverse proxy
+│   └── nginx.conf
+│
+├── tests/                      # Test suite
+│   ├── test_chunking.py
+│   ├── test_search.py
+│   └── evaluation/
+│       └── test_evaluation.py  # LLM-as-Judge evaluation
+│
+├── data/                       # Pre-processed data
+│   └── hipaa_data.json        # Chunks ready for loading
+│
+├── docker-compose.yml          # Container orchestration
+├── run_etl.py                  # ETL pipeline runner
+└── requirements.txt
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
-### Installation
+### Prerequisites
 
-1. **Clone and navigate:**
+- Docker & Docker Compose
+- OpenAI API key
+
+### 1. Setup Environment
+
 ```bash
-cd hipaa/
-```
+cd hipaa
 
-2. **Configure environment:**
-```bash
+# Create environment file
 cp .env.example .env
-```
-Add your OpenAI API key to .env
-(Edit the file or run the command below)
-```bash
-echo "OPENAI_API_KEY=sk-your-key-here" >> .env
+
+# Add your OpenAI API key to .env
+# OPENAI_API_KEY=sk-your-key-here
 ```
 
-3. **Start all services:**
+### 2. Start Services
+
 ```bash
-docker compose up -d
+# Start all services (data loads automatically on first run)
+docker-compose up -d
+
+# View logs to monitor data loading
+docker-compose logs -f backend
 ```
 
-4. **Load HIPAA data (first time only):**
-```bash
-# Parse PDF and generate embeddings (~1 minute, costs <$1)
-docker compose exec backend python load_to_db.py
+The backend will automatically:
+1. Wait for PostgreSQL to be ready
+2. Check if data is already loaded
+3. Load `data/hipaa_data.json` if database is empty
+4. Create vector indexes
+5. Start the API server
 
-# Restart backend to activate
-docker compose restart backend
+### 3. Access the System
+
+- **Web UI**: http://localhost (via NGINX)
+- **API**: http://localhost:8000
+- **Gradio Direct**: http://localhost:7860
+
+### 4. Public Access (Optional)
+
+To expose the system to the internet via Cloudflare Tunnel:
+
+```bash
+# Start with cloudflared tunnel
+docker-compose --profile tunnel up -d
+
+# Watch logs to get the public URL
+docker-compose logs -f cloudflared
 ```
 
-5. **Verify system:**
-```bash
-curl http://localhost/api/
-# Should return: {"status":"running","database":"postgresql_async","sections_loaded":172,"search_method":"hybrid_vector_keyword_reranking","query_types":["full_text","citation","explanation","reference_list"]}
-```
+You'll see a URL like `https://random-name.trycloudflare.com` that provides secure public access.
 
-### Access Points
+## API Endpoints
 
-- **Web UI**: http://localhost
-- **API**: http://localhost/api/
-- **API Docs**: http://localhost/api/docs
-
-### Public Access (Optional)
+### Ask Question
 
 ```bash
-# Using Cloudflare Tunnel
-cloudflared tunnel --url http://localhost:80
+POST /ask
+Content-Type: application/json
 
-# Or using ngrok
-ngrok http 80
-```
-
-## 📖 Usage Examples
-
-### Web Interface
-
-1. Open http://localhost in browser
-2. Enter question: "What is the purpose of HIPAA Part 160?"
-3. Click "Ask Question"
-4. View answer with cited sources
-
-### API
-
-```bash
-# Ask a question
-curl -X POST http://localhost/api/ask \
-  -H "Content-Type: application/json" \
-  -d '{"text":"What is the overall purpose of HIPAA Part 160?"}'
-
-# Response
 {
-  "answer": "HIPAA Part 160 serves as the foundation for the Administrative Simplification provisions of the...",
-  "sources": ["§ 160.101","§ 160.201","§ 164.534","§ 160.316","§ 164.500"]
-
-
-
-### Python Client
-
-```python
-import requests
-
-response = requests.post(
-    "http://localhost/api/ask",
-    json={"text": "What are civil penalties for noncompliance?"}
-)
-
-data = response.json()
-print(data["answer"])
-print("Sources:", data["sources"])
+    "text": "What does minimum necessary mean?"
+}
 ```
 
-## 🧪 Testing
+Response:
+```json
+{
+    "answer": "Under HIPAA, 'minimum necessary' refers to...",
+    "sources": ["§ 164.502", "§ 164.514"],
+    "query_type": "explanation"
+}
+```
 
-
-
-### Manual Testing
-
-Test with these sample questions:
-1.  What is the overall purpose of HIPAA Part 160?
-2.	Which part covers data privacy measures?
-3.	What does “minimum necessary” mean in HIPAA terminology?
-4.	Which entities are specifically regulated under HIPAA?
-5.	What are the potential civil penalties for noncompliance?
-6.	Does HIPAA mention encryption best practices?
-7.	Can I disclose personal health information to family members?
-8.	If a covered entity outsources data processing, which sections apply?
-9.	Cite the specific regulation texts regarding permitted disclosures to law enforcement.
-10. Where security rule is located?
-11. Give me full contents of 160.514 part 
-
-
-## 🔧 Technology Stack
-
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| **Orchestration** | Docker Compose | Container management |
-| **Backend** | FastAPI + asyncio | Async REST API |
-| **Database** | PostgreSQL 15 + pgvector | Vector storage & search |
-| **Frontend** | Gradio | User interface |
-| **Reverse Proxy** | NGINX | Request routing |
-| **AI Model** | OpenAI GPT-3.5-turbo | Answer generation |
-| **Embeddings** | text-embedding-3-small | Semantic search |
-| **LLM Evaluation** | GPT-4o-mini | LLM-as-a-Judge grading |
-| **Public Access** | Cloudflare Tunnel | HTTPS tunneling |
-
-
-## 🛠️ Troubleshooting
-
-### Backend shows 0 sections loaded
+### Search Sections
 
 ```bash
-# Re-run PDF loading
-docker compose exec backend python load_to_db.py
-docker compose restart backend
+GET /search/{query}
 ```
 
-### Frontend not accessible
+### Get Full Section
 
 ```bash
-# Check logs
-docker compose logs frontend
-
-# Restart frontend
-docker compose restart frontend
+GET /section/160.514
 ```
 
-### Database connection errors
+### Health Check
 
 ```bash
-# Restart all services
-docker compose down
-docker compose up -d
+GET /
 ```
 
-### OpenAI API errors
+## Query Types
+
+The system classifies queries into four types:
+
+| Type | Description | Example |
+|------|-------------|---------|
+| `full_text` | Complete section retrieval | "Give me full contents of 164.530" |
+| `citation` | Exact quotes with references | "Quote the text about disclosures" |
+| `explanation` | Plain language explanation | "What does minimum necessary mean?" |
+| `reference_list` | List of relevant sections | "Which sections cover security?" |
+
+## Configuration
+
+All settings can be configured via environment variables:
+
+### Search Settings
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SEARCH_VECTOR_WEIGHT` | 0.6 | Weight for semantic search |
+| `SEARCH_KEYWORD_WEIGHT` | 0.4 | Weight for keyword search |
+| `SEARCH_TOP_K` | 15 | Initial candidates to retrieve |
+
+### Database Settings
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_HOST` | postgres | Database host |
+| `DB_PORT` | 5432 | Database port |
+| `DB_NAME` | hipaa | Database name |
+| `DB_USER` | user | Database user |
+| `DB_PASSWORD` | pass | Database password |
+
+### Model Settings
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENAI_API_KEY` | (required) | OpenAI API key |
+| `EMBEDDING_MODEL` | text-embedding-3-small | OpenAI embedding model |
+| `RERANK_MODEL` | gpt-4o-mini | Model for reranking |
+| `GENERATION_MODEL` | gpt-3.5-turbo | Model for answers |
+
+## Local Development
 
 ```bash
-# Verify API key
-docker compose exec backend printenv OPENAI_API_KEY
+# Install uv if not already installed
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Update .env and restart
-docker compose restart backend
+# Install dependencies
+uv sync
+
+# Start database only
+docker-compose up postgres -d
+
+# Run backend locally
+uv run uvicorn backend.main:app --reload
+
+# Run frontend locally  
+uv run python frontend/app.py
 ```
 
-## 📝 Configuration
+## Evaluation
 
-### Environment Variables
+Run the LLM-as-Judge evaluation suite:
 
 ```bash
-# .env file
-OPENAI_API_KEY=sk-your-key-here
+# Ensure backend is running
+docker-compose up -d
+
+# Run evaluation
+uv run python tests/evaluation/test_evaluation.py
 ```
 
-### Adjust Search Parameters
+Metrics evaluated:
+- Accuracy
+- Completeness
+- Citation quality
+- Relevance
+- Query type fit
 
-Edit `backend/main.py`:
-
-```python
-# Line ~270: Change top-k results
-candidates = await hybrid_search(q.text, top_k=15)  # Default: 10
-
-# Line ~271: Change reranking count
-relevant = rerank_results(q.text, candidates, top_k=7)  # Default: 5
-
-# Line ~272: Change context length
-context_length = 2000  # Default: 1200
-```
-
-### Change AI Model
-
-Edit `backend/main.py`:
-
-```python
-# Line ~310: Change to GPT-4
-model="gpt-4"  # Default: gpt-3.5-turbo
-```
-
-# 🔮 Roadmap to >90% Accuracy
-- **Refined Chunking Strategy**: Currently using section-based chunking. Optimization: Reduce chunk size to paragraph level. This reduces noise in the context window and improves retrieval precision.
-- **Advanced Retrieval (GraphRAG)**. Implement GraphRAG (Knowledge Graph) to capture relationships between non-adjacent sections.
-- **Query Expansion**: Generate multiple variations of the user's question to capture synonyms and legal terminology variations before searching the vector database.
-
-
-
-## 🎓 Development
-
-### Local Development
+## Run Tests
 
 ```bash
-# View logs
-docker compose logs -f backend
+# Run all tests
+uv run pytest tests/ -v
 
-# Access container shell
-docker compose exec backend bash
-
-# Run tests
-docker compose exec backend python test_evaluation.py
-
-# Check database
-docker compose exec postgres psql -U user -d hipaa
+# Run specific test file
+uv run pytest tests/test_chunking.py -v
 ```
 
-### Adding New Features
+## Performance
 
-1. Edit source files in `backend/` or `frontend/`
-2. Copy to container or rebuild:
+Current benchmarks (12 test questions):
+- **Overall Accuracy**: 86.2%
+- **Explanation queries**: 4.3/5
+- **Citation queries**: 4.1/5
+- **Reference list queries**: 4.4/5
+
+---
+
+## Advanced: ETL Pipeline (Optional)
+
+If you need to re-process the HIPAA PDF from scratch:
+
+### Prerequisites
+- HIPAA regulations PDF (download from HHS.gov)
+
+### Run ETL Pipeline
+
 ```bash
-# Quick update (no rebuild)
-docker compose cp backend/main.py backend:/app/main.py
-docker compose restart backend
+# Install dependencies
+uv sync
 
-# Or full rebuild
-docker compose build backend
-docker compose up -d
+# Run full pipeline from PDF
+uv run python run_etl.py data/hipaa_regulations.pdf
+
+# Or with existing text file
+uv run python run_etl.py data/hipaa.pdf --skip-pdf --text-file data/hipaa_linear_text.txt
 ```
 
-## 📄 License
+### Chunking Strategy
 
-MIT License - See LICENSE file for details
+The system uses intelligent hierarchical chunking:
 
-## 🙏 Acknowledgments
+1. **Part Level**: Captures Part metadata (authority, source)
+2. **Subpart Level**: Groups related sections
+3. **Section Level**: Primary content unit
+4. **Subsection Grouping**: Groups (a), (b), (c) into ~5-7k char chunks
 
-- HIPAA regulations from HHS.gov
-- OpenAI for GPT-3.5 and embeddings
-- FastAPI framework
-- Gradio UI library
-- pgvector for PostgreSQL
+```
+§ 164.530 Administrative Requirements
+├── chunk_1: (a)-(c) [5,200 chars]
+├── chunk_2: (d)-(f) [4,800 chars]
+└── chunk_3: (g)-(i) [6,100 chars]
+```
 
-## 📞 Support
+### Database Schema
 
-For issues or questions:
-1. Check logs: `docker compose logs`
-2. Review troubleshooting section
-3. Verify environment variables
-4. Ensure OpenAI API credits available
+```sql
+CREATE TABLE hipaa_sections (
+    id SERIAL PRIMARY KEY,
+    chunk_id VARCHAR(100) UNIQUE NOT NULL,
+    chunk_type VARCHAR(50) NOT NULL,
+    
+    -- Hierarchy
+    part VARCHAR(10) NOT NULL,
+    subpart VARCHAR(50),
+    section VARCHAR(50),
+    section_title TEXT,
+    
+    -- Subchunk metadata
+    is_subchunk BOOLEAN DEFAULT FALSE,
+    parent_section VARCHAR(100),
+    grouped_subsections TEXT[],
+    
+    -- Content
+    text TEXT NOT NULL,
+    cross_references TEXT[],
+    
+    -- Vector
+    embedding vector(1536)
+);
+```
 
-## 🔄 Updates
+---
 
-**Version 1.0.0** (2025-11-28)
-- Initial release
-- Hybrid search implementation
-- Async FastAPI backend
-- LLM-based reranking
-- 86.2% evaluation score
+## Roadmap
 
+- [ ] **Paragraph-level chunking**: Reduce noise in results
+- [ ] **GraphRAG**: Utilize cross-reference relationships
+- [ ] **Query expansion**: Legal terminology variations
+- [ ] **Citation validation**: Verify cited sections exist
+- [ ] **Multi-document support**: Support for related regulations
 
+## License
+
+MIT License - See LICENSE file for details.
+
+## Acknowledgments
+
+- HIPAA regulation text from [HHS.gov](https://www.hhs.gov/hipaa/for-professionals/privacy/laws-regulations/combined-regulation-text/index.html)
+- Built with FastAPI, Gradio, PostgreSQL + pgvector, and OpenAI
