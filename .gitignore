@@ -68,11 +68,7 @@ venv.bak/
 *~
 
 # Project specific
-data/*.txt
-data/*.json
-data/*.pdf
 *.log
-evaluation_results_*.json
 
 # Docker
 .docker/
